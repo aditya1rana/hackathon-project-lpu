@@ -1,5 +1,6 @@
+import { Bot, Loader2, MessageCircle, Send, User, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, Loader2, Bot, User } from "lucide-react";
+import { API_BASE } from "../config/api-config";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -8,7 +9,6 @@ interface ChatMessage {
   content: string;
 }
 
-const API_BASE = "http://localhost:5000/api";
 
 export default function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);

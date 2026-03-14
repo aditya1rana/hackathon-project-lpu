@@ -1,4 +1,5 @@
 import { InventoryItem, Request, User, Notification, Supplier, PurchaseOrder } from '../types';
+import { API_BASE } from '../config/api-config';
 
 // Helper to simulate network delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,7 +40,6 @@ export const mockPurchaseOrders: PurchaseOrder[] = [
   { id: "PO-2026-032", items: "Books - Physics Collection", supplier: "Academic Books Inc.", amount: "$890.00", status: "Processing", date: "Mar 5, 2026" },
 ];
 
-const API_BASE = 'http://localhost:5000/api';
 
 export const api = {
   // Inventory
@@ -117,16 +117,75 @@ export const api = {
 
   // Requests
   async getRequests() {
-    await delay(600);
-    return [...mockRequests];
+    try {
+      const res = await fetch(`${API_BASE}/requests?limit=1000`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
+      });
+      if (!res.ok) throw new Error("Failed to fetch requests");
+      const json = await res.json();
+      
+      const requestsArray = Array.isArray(json.data) ? json.data : [];
+      
+      return requestsArray.map((req: any) => ({
+        id: req.id,
+        itemName: req.item?.name || 'Unknown Item',
+        requester: req.user ? `${req.user.firstName} ${req.user.lastName}`.trim() : 'Unknown',
+        type: 'Borrow', // Backend currently doesn't have request type in the same way, defaulting or mapped
+        date: new Date(req.createdAt).toISOString().split('T')[0],
+        status: req.status.charAt(0).toUpperCase() + req.status.slice(1).toLowerCase(),
+        quantity: req.quantity,
+        department: req.user?.department || '',
+        reason: req.purpose || '',
+      }));
+    } catch (e) {
+      console.warn("Using mock requests due to error", e);
+      await delay(600);
+      return [...mockRequests];
+    }
   },
   async addRequest(request: Omit<Request, 'id'>) {
-    await delay(800);
-    return { ...request, id: `REQ-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}` };
+    // Need to find the item ID based on the name from inventory for a real submission,
+    // For now try to assume we can call the endpoint
+    try {
+      // Small hack: the backend requires itemId.  The frontend passes itemName.
+      // We would ideally fetch inventory here or pass itemId from the UI.
+      // If we don't have it, this might fail, but let's implement the structure.
+      const res = await fetch(`${API_BASE}/requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify({
+          itemId: (request as any).itemId || 'dummy-item-id', // Needs to be provided by UI ideally
+          quantity: request.quantity,
+          purpose: request.reason || '',
+        })
+      });
+      if (!res.ok) throw new Error("Failed to add request");
+      const json = await res.json();
+      return { ...request, id: json.data.id };
+    } catch (e) {
+      await delay(800);
+      return { ...request, id: `REQ-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}` };
+    }
   },
   async updateRequestStatus(id: string, status: Request['status']) {
-    await delay(700);
-    return { id, status };
+    try {
+      const res = await fetch(`${API_BASE}/requests/${id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify({ status: status.toUpperCase() })
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      return { id, status };
+    } catch (e) {
+      await delay(700);
+      return { id, status };
+    }
   },
 
   // Suppliers

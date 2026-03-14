@@ -34,6 +34,7 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { api } from "../services/api";
 import { toast } from "sonner";
+import { API_BASE } from "../config/api-config";
 const stockData = [
   { date: "Jan", stock: 50 },
   { date: "Feb", stock: 48 },
@@ -93,7 +94,7 @@ export default function ItemDetails() {
   const fetchDetails = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:5000/api/inventory/${id}`);
+      const res = await fetch(`${API_BASE}/inventory/${id}`);
       const data = await res.json();
       setItem(data.data);
     } catch (e) {
