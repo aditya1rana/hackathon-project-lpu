@@ -10,9 +10,10 @@ let io: Server;
  * Provides realtime notifications to connected clients.
  */
 export function initializeSocket(httpServer: HttpServer): Server {
+  const allowedOrigins = env.CLIENT_URL.split(',').map(url => url.trim());
   io = new Server(httpServer, {
     cors: {
-      origin: env.CLIENT_URL,
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
       credentials: true,
     },
