@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Firestore Security Rules for SalahLock
+//
+// The main principle: every user can only read and write THEIR OWN data.
+// No one can access another user's prayers, settings, or subscription info.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── users ──────────────────────────────────────────────────
+    // Document ID = Firebase Auth UID
+    match /users/{userId} {
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow create: if false;  // created by Cloud Function (onUserCreate)
+      allow delete: if false;
+    }
+
+    // ── prayer_times ──────────────────────────────────────────
+    // Document ID = "{userId}_{date}"
+    match /prayer_times/{docId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow write: if false;  // only written by the Cloud Function
+    }
+
+    // ── prayer_logs ───────────────────────────────────────────
+    // Users can create and read their own prayer log entries
+    match /prayer_logs/{logId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ── blocking_settings ─────────────────────────────────────
+    // Document ID = Firebase Auth UID
+    match /blocking_settings/{userId} {
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow create: if false;  // created by Cloud Function
+      allow delete: if false;
+    }
+
+    // ── subscriptions ─────────────────────────────────────────
+    // Document ID = Firebase Auth UID, read-only for users
+    match /subscriptions/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;  // only written by Cloud Function (stripeWebhook)
+    }
+  }
+}

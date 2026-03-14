@@ -1,0 +1,375 @@
+// ──────────────────────────────────────────────────────────────
+// Prisma Schema — Smart Inventory Management System
+// ──────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────
+
+enum RoleName {
+  ADMIN
+  LIBRARIAN
+  LAB_ASSISTANT
+  STUDENT
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ISSUED
+  RETURNED
+  CANCELLED
+}
+
+enum TransactionType {
+  ISSUE
+  RETURN
+  ADJUSTMENT
+  RESTOCK
+  WRITE_OFF
+}
+
+enum NotificationType {
+  LOW_STOCK
+  APPROVAL
+  RETURN_REMINDER
+  PENALTY
+  SYSTEM
+  PROCUREMENT
+}
+
+enum ProcurementStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+enum PredictionType {
+  DEMAND
+  STOCKOUT
+  RESTOCK
+  ANOMALY
+}
+
+// ─── Users & Auth ───────────────────────────────────────────
+
+model Role {
+  id          String   @id @default(cuid())
+  name        RoleName @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?   @map("password_hash")
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  department    String?
+  phone         String?
+  avatar        String?
+  googleId      String?   @unique @map("google_id")
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  roleId String @map("role_id")
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  refreshTokens RefreshToken[]
+  otps          OTP[]
+  requests      Request[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  issuedBy      Transaction[]  @relation("issuedBy")
+
+  @@index([email])
+  @@index([roleId])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model OTP {
+  id        String   @id @default(cuid())
+  code      String
+  purpose   String   // "EMAIL_VERIFY" | "PASSWORD_RESET"
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("otps")
+}
+
+// ─── Inventory ──────────────────────────────────────────────
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  items InventoryItem[]
+
+  @@index([name])
+  @@map("categories")
+}
+
+model InventoryItem {
+  id           String    @id @default(cuid())
+  name         String
+  description  String?
+  quantity     Int       @default(0)
+  minStock     Int       @default(0) @map("min_stock")
+  location     String?
+  barcode      String?   @unique
+  qrCode       String?   @map("qr_code")
+  unitPrice    Decimal?  @default(0) @map("unit_price") @db.Decimal(12, 2)
+  imageUrl     String?   @map("image_url")
+  isConsumable Boolean   @default(false) @map("is_consumable")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  supplierId String?   @map("supplier_id")
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  requests     Request[]
+  transactions Transaction[]
+  usageLogs    UsageLog[]
+  predictions  Prediction[]
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([barcode])
+  @@index([quantity])
+  @@index([deletedAt])
+  @@map("inventory_items")
+}
+
+// ─── Suppliers ──────────────────────────────────────────────
+
+model Supplier {
+  id           String    @id @default(cuid())
+  name         String
+  contactName  String?   @map("contact_name")
+  email        String?
+  phone        String?
+  address      String?
+  leadTimeDays Int?      @map("lead_time_days")
+  rating       Decimal?  @default(0) @db.Decimal(3, 2)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  items        InventoryItem[]
+  procurements Procurement[]
+
+  @@index([name])
+  @@index([deletedAt])
+  @@map("suppliers")
+}
+
+// ─── Requests & Transactions ────────────────────────────────
+
+model Request {
+  id            String        @id @default(cuid())
+  quantity      Int
+  purpose       String?
+  status        RequestStatus @default(PENDING)
+  approvedAt    DateTime?     @map("approved_at")
+  rejectedAt    DateTime?     @map("rejected_at")
+  issuedAt      DateTime?     @map("issued_at")
+  returnedAt    DateTime?     @map("returned_at")
+  dueDate       DateTime?     @map("due_date")
+  penaltyAmount Decimal?      @default(0) @map("penalty_amount") @db.Decimal(12, 2)
+  penaltyReason String?       @map("penalty_reason")
+  remarks       String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+
+  itemId String        @map("item_id")
+  item   InventoryItem @relation(fields: [itemId], references: [id])
+
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([itemId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("requests")
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  type      TransactionType
+  quantity  Int
+  notes     String?
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  itemId String        @map("item_id")
+  item   InventoryItem @relation(fields: [itemId], references: [id])
+
+  requestId String?  @map("request_id")
+  request   Request? @relation(fields: [requestId], references: [id])
+
+  issuedById String? @map("issued_by_id")
+  issuedBy   User?   @relation("issuedBy", fields: [issuedById], references: [id])
+
+  @@index([itemId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+// ─── Usage Logs ─────────────────────────────────────────────
+
+model UsageLog {
+  id           String   @id @default(cuid())
+  action       String   // "ISSUE", "RETURN", "DAMAGED", "LOST"
+  quantity     Int
+  department   String?
+  performedBy  String?  @map("performed_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  itemId String        @map("item_id")
+  item   InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([department])
+  @@map("usage_logs")
+}
+
+// ─── Predictions ────────────────────────────────────────────
+
+model Prediction {
+  id             String         @id @default(cuid())
+  type           PredictionType
+  predictedValue Decimal        @map("predicted_value") @db.Decimal(12, 2)
+  confidence     Decimal?       @db.Decimal(5, 4)
+  metadata       Json?          // Additional prediction data
+  predictedFor   DateTime       @map("predicted_for")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  itemId String        @map("item_id")
+  item   InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+  @@index([type])
+  @@index([predictedFor])
+  @@map("predictions")
+}
+
+// ─── Notifications ──────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ─── Procurements ───────────────────────────────────────────
+
+model Procurement {
+  id              String            @id @default(cuid())
+  title           String
+  description     String?
+  status          ProcurementStatus @default(DRAFT)
+  estimatedCost   Decimal?          @map("estimated_cost") @db.Decimal(12, 2)
+  actualCost      Decimal?          @map("actual_cost") @db.Decimal(12, 2)
+  items           Json              // Array of { itemId, quantity, unitPrice }
+  notes           String?
+  orderedAt       DateTime?         @map("ordered_at")
+  receivedAt      DateTime?         @map("received_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  supplierId String   @map("supplier_id")
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([status])
+  @@index([supplierId])
+  @@index([createdAt])
+  @@map("procurements")
+}
+
+// ─── Audit Logs ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // CREATE, UPDATE, DELETE, LOGIN, etc.
+  entity     String   // Table/model name
+  entityId   String?  @map("entity_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
