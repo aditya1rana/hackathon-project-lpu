@@ -135,6 +135,41 @@ async function main() {
   ]);
   console.log(`  ✅ ${items.length} sample items created`);
 
+  // ─── Sample Requests ────────────────────────────────────
+  const requests = await Promise.all([
+    prisma.request.create({
+      data: {
+        userId: admin.id,
+        itemId: items[0].id,
+        quantity: 5,
+        purpose: 'Hackathon hardware demo',
+        status: 'PENDING',
+      }
+    }),
+    prisma.request.create({
+      data: {
+        userId: admin.id,
+        itemId: items[1].id,
+        quantity: 2,
+        purpose: 'Lab testing',
+        status: 'APPROVED',
+        approvedAt: new Date(),
+      }
+    }),
+    prisma.request.create({
+      data: {
+        userId: admin.id,
+        itemId: items[2].id,
+        quantity: 10,
+        purpose: 'Chemistry experiment',
+        status: 'REJECTED',
+        rejectedAt: new Date(),
+        remarks: 'Insufficient stock for this class size',
+      }
+    })
+  ]);
+  console.log(`  ✅ ${requests.length} sample requests created`);
+
   console.log('\n🌱 Seeding complete!');
 }
 
